@@ -70,9 +70,6 @@ status_t Parameters::initialize(const CameraMetadata *info) {
 
     params.setPreviewSize(previewWidth, previewHeight);
     params.setVideoSize(videoWidth, videoHeight);
-    params.set(CameraParameters::KEY_PREFERRED_PREVIEW_SIZE_FOR_VIDEO,
-            String8::format("%dx%d",
-                    previewWidth, previewHeight));
     {
         String8 supportedPreviewSizes;
         for (size_t i=0; i < availableProcessedSizes.count; i += 2) {
@@ -82,8 +79,6 @@ status_t Parameters::initialize(const CameraMetadata *info) {
                     availableProcessedSizes.data.i32[i+1]);
         }
         params.set(CameraParameters::KEY_SUPPORTED_PREVIEW_SIZES,
-                supportedPreviewSizes);
-        params.set(CameraParameters::KEY_SUPPORTED_VIDEO_SIZES,
                 supportedPreviewSizes);
     }
 
@@ -111,7 +106,7 @@ status_t Parameters::initialize(const CameraMetadata *info) {
                 supportedPreviewFpsRange);
     }
 
-    previewFormat = HAL_PIXEL_FORMAT_YCrCb_420_SP;
+    previewFormat = HAL_PIXEL_FORMAT_YCbCr_420_SP;
     params.set(CameraParameters::KEY_PREVIEW_FORMAT,
             formatEnumToString(previewFormat)); // NV21
 
@@ -132,7 +127,7 @@ status_t Parameters::initialize(const CameraMetadata *info) {
                 supportedPreviewFormats +=
                     CameraParameters::PIXEL_FORMAT_YUV422SP;
                 break;
-            case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+            case HAL_PIXEL_FORMAT_YCbCr_420_SP:
                 supportedPreviewFormats +=
                     CameraParameters::PIXEL_FORMAT_YUV420SP;
                 break;
@@ -141,6 +136,7 @@ status_t Parameters::initialize(const CameraMetadata *info) {
                     CameraParameters::PIXEL_FORMAT_YUV422I;
                 break;
             case HAL_PIXEL_FORMAT_YV12:
+            case HAL_PIXEL_FORMAT_YCbCr_420_P:
                 supportedPreviewFormats +=
                     CameraParameters::PIXEL_FORMAT_YUV420P;
                 break;
@@ -1941,15 +1937,15 @@ const char* Parameters::getStateName(State state) {
 int Parameters::formatStringToEnum(const char *format) {
     return
         !format ?
-            HAL_PIXEL_FORMAT_YCrCb_420_SP :
+            HAL_PIXEL_FORMAT_YCbCr_420_SP :
         !strcmp(format, CameraParameters::PIXEL_FORMAT_YUV422SP) ?
             HAL_PIXEL_FORMAT_YCbCr_422_SP : // NV16
         !strcmp(format, CameraParameters::PIXEL_FORMAT_YUV420SP) ?
-            HAL_PIXEL_FORMAT_YCrCb_420_SP : // NV21
+            HAL_PIXEL_FORMAT_YCbCr_420_SP : // NV21
         !strcmp(format, CameraParameters::PIXEL_FORMAT_YUV422I) ?
             HAL_PIXEL_FORMAT_YCbCr_422_I :  // YUY2
         !strcmp(format, CameraParameters::PIXEL_FORMAT_YUV420P) ?
-            HAL_PIXEL_FORMAT_YV12 :         // YV12
+            HAL_PIXEL_FORMAT_YCbCr_420_P :         // YV12
         !strcmp(format, CameraParameters::PIXEL_FORMAT_RGB565) ?
             HAL_PIXEL_FORMAT_RGB_565 :      // RGB565
         !strcmp(format, CameraParameters::PIXEL_FORMAT_RGBA8888) ?
@@ -1965,13 +1961,14 @@ const char* Parameters::formatEnumToString(int format) {
         case HAL_PIXEL_FORMAT_YCbCr_422_SP: // NV16
             fmt = CameraParameters::PIXEL_FORMAT_YUV422SP;
             break;
-        case HAL_PIXEL_FORMAT_YCrCb_420_SP: // NV21
+        case HAL_PIXEL_FORMAT_YCbCr_420_SP: // NV21
             fmt = CameraParameters::PIXEL_FORMAT_YUV420SP;
             break;
         case HAL_PIXEL_FORMAT_YCbCr_422_I: // YUY2
             fmt = CameraParameters::PIXEL_FORMAT_YUV422I;
             break;
         case HAL_PIXEL_FORMAT_YV12:        // YV12
+        case HAL_PIXEL_FORMAT_YCbCr_420_P:        // I420
             fmt = CameraParameters::PIXEL_FORMAT_YUV420P;
             break;
         case HAL_PIXEL_FORMAT_RGB_565:     // RGB565

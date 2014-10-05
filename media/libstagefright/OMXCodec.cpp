@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (C) 2012 Freescale Semiconductor, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1715,11 +1716,30 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
         return err;
     }
 
+    int color_fmt = HAL_PIXEL_FORMAT_YCbCr_420_SP;
+    switch(def.format.video.eColorFormat) {
+	    case OMX_COLOR_FormatYUV420SemiPlanar:
+		    color_fmt = HAL_PIXEL_FORMAT_YCbCr_420_SP;
+		    break;
+	    case OMX_COLOR_FormatYUV420Planar:
+		    color_fmt = HAL_PIXEL_FORMAT_YCbCr_420_P;
+		    break;
+	    case OMX_COLOR_Format16bitRGB565:
+		    color_fmt = HAL_PIXEL_FORMAT_RGB_565;
+		    break;
+	    case OMX_COLOR_FormatYUV422Planar:
+		    color_fmt = HAL_PIXEL_FORMAT_YCbCr_422_P;
+		    break;
+	    default:
+		    ALOGE("Not supported color format %d by surface!", def.format.video.eColorFormat);
+		    return UNKNOWN_ERROR;
+    }
+
     err = native_window_set_buffers_geometry(
             mNativeWindow.get(),
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
-            def.format.video.eColorFormat);
+            color_fmt);
 
     if (err != 0) {
         ALOGE("native_window_set_buffers_geometry failed: %s (%d)",
@@ -1783,6 +1803,7 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
     // XXX: Is this the right logic to use?  It's not clear to me what the OMX
     // buffer counts refer to - how do they account for the renderer holding on
     // to buffers?
+    minUndequeuedBufs = 0;
     if (def.nBufferCountActual < def.nBufferCountMin + minUndequeuedBufs) {
         OMX_U32 newBufferCount = def.nBufferCountMin + minUndequeuedBufs;
         def.nBufferCountActual = newBufferCount;
@@ -1884,7 +1905,6 @@ OMXCodec::BufferInfo* OMXCodec::dequeueBufferFromNativeWindow() {
     if (err != 0) {
       CODEC_LOGE("dequeueBuffer failed w/ error 0x%08x", err);
 
-      setState(ERROR);
       return 0;
     }
 
@@ -2274,9 +2294,9 @@ void OMXCodec::on_message(const omx_message &msg) {
                     mTargetTimeUs = -1;
                 }
 
-                mFilledBuffers.push_back(i);
-                mBufferFilled.signal();
-                if (mIsEncoder) {
+		mFilledBuffers.push_back(i);
+		mBufferFilled.signal();
+		if (mIsEncoder) {
                     sched_yield();
                 }
             }
@@ -2589,6 +2609,18 @@ void OMXCodec::onCmdComplete(OMX_COMMANDTYPE cmd, OMX_U32 data) {
 
                     drainInputBuffers();
                     fillOutputBuffers();
+                    #if defined (IMX5X)
+                    Vector<BufferInfo> *buffers = &mPortBuffers[kPortIndexOutput];
+                     for (size_t i = 0; i < buffers->size(); ++i) {
+                          BufferInfo *info = &buffers->editItemAt(i);
+                          if(info->mStatus == OWNED_BY_NATIVE_WINDOW){
+                               // Give the buffer to the OMX node to fill. MX53 vpu firmware needs all buffer returned when flush
+                                 info->mStatus = OWNED_BY_US;
+                                 fillOutputBuffer(info);
+                                 info->mStatus = OWNED_BY_NATIVE_WINDOW;
+                          }
+                        }
+                    #endif
                 }
 
                 if (mOutputPortSettingsChangedPending) {
@@ -2831,11 +2863,18 @@ bool OMXCodec::flushPortAsync(OMX_U32 portIndex) {
         // No flush is necessary and this component fails to send a
         // flush-complete event in this case.
 
-        return false;
+	    return false;
     }
 
-    status_t err =
-        mOMX->sendCommand(mNode, OMX_CommandFlush, portIndex);
+    status_t err = UNKNOWN_ERROR;
+    OMX_U32 nCnt = 0;
+    while (err != OK) {
+	    err = mOMX->sendCommand(mNode, OMX_CommandFlush, portIndex);
+	    if (nCnt ++ == 100)
+		    break;
+
+	    usleep(10000);
+    }
     CHECK_EQ(err, (status_t)OK);
 
     return true;

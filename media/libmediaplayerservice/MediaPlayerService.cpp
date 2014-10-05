@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2008, The Android Open Source Project
+** Copyright (C) 2012 Freescale Semiconductor, Inc.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -14,6 +15,8 @@
 ** See the License for the specific language governing permissions and
 ** limitations under the License.
 */
+
+/* Copyright 2009-2013 Freescale Semiconductor, Inc. */
 
 // Proxy for media player implementations
 
@@ -628,6 +631,10 @@ status_t MediaPlayerService::Client::setDataSource(
 
     if ((strncmp(url, "http://", 7) == 0) ||
         (strncmp(url, "https://", 8) == 0) ||
+#ifdef FSL_GM_PLAYER
+        (strncmp(url, "rtp://", 6) == 0) ||
+        (strncmp(url, "udp://", 6) == 0) ||
+#endif
         (strncmp(url, "rtsp://", 7) == 0)) {
         if (!checkPermission("android.permission.INTERNET")) {
             return PERMISSION_DENIED;
@@ -649,7 +656,7 @@ status_t MediaPlayerService::Client::setDataSource(
         close(fd);
         return mStatus;
     } else {
-        player_type playerType = MediaPlayerFactory::getPlayerType(this, url);
+        player_type playerType = MediaPlayerFactory::getPlayerType(this, url, headers);
         sp<MediaPlayerBase> p = setDataSource_pre(playerType);
         if (p == NULL) {
             return NO_INIT;
@@ -1419,6 +1426,32 @@ status_t MediaPlayerService::AudioOutput::open(
         if (0 == channelMask) {
             ALOGE("open() error, can\'t derive mask for %d audio channels", channelCount);
             return NO_INIT;
+        }
+    }
+
+    /*When the track use the direct output, it can not be used for recycle. After finishing
+      playback , the direct output must be released, and in beginning of playback it will be
+      recreated.
+      In cycle playback, if the next track also need to create direct output, but previous one is
+      not released, it will cause issue.
+      So here we checking the output flag, if it is direct output, then release it.
+    */
+    if (mRecycledTrack) {
+        int flags;
+        AudioSystem::getFlags(mRecycledTrack->getCurrentOutput(), mStreamType, &flags);
+        ALOGV("RecycledTrack getFlags %d",flags);
+        if (flags & AUDIO_OUTPUT_FLAG_DIRECT) {
+            // if we're not going to reuse the track, unblock and flush it
+            if (mCallbackData != NULL) {
+                mCallbackData->setOutput(NULL);
+                mCallbackData->endTrackSwitch();
+            }
+            mRecycledTrack->flush();
+            delete mRecycledTrack;
+            mRecycledTrack = NULL;
+            delete mCallbackData;
+            mCallbackData = NULL;
+            close();
         }
     }
 

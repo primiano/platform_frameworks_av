@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2012, The Android Open Source Project
+** Copyright (C) 2013 Freescale Semiconductor, Inc.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -1182,8 +1183,8 @@ sp<AudioFlinger::PlaybackThread::Track> AudioFlinger::PlaybackThread::createTrac
             }
         }
     } else {
-        // Resampler implementation limits input sampling rate to 2 x output sampling rate.
-        if (sampleRate > mSampleRate*2) {
+        // Resampler implementation limits input sampling rate to 8 x output sampling rate.
+        if (sampleRate > mSampleRate*8) {
             ALOGE("Sample rate out of range: %u mSampleRate %u", sampleRate, mSampleRate);
             lStatus = BAD_VALUE;
             goto Exit;
@@ -1410,6 +1411,8 @@ void AudioFlinger::PlaybackThread::audioConfigChanged_l(int event, int param) {
         desc.frameCount = mNormalFrameCount; // FIXME see
                                              // AudioFlinger::frameCount(audio_io_handle_t)
         desc.latency = latency();
+        if (mType == DIRECT)
+            desc.flags = AUDIO_OUTPUT_FLAG_DIRECT;
         param2 = &desc;
         break;
 
@@ -3239,6 +3242,7 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::DirectOutputThread::prep
                 if (--(track->mRetryCount) <= 0) {
                     ALOGV("BUFFER TIMEOUT: remove(%d) from active list", track->name());
                     tracksToRemove->add(track);
+                    android_atomic_or(CBLK_DISABLED, &cblk->flags);
                 } else if (i == (count -1)){
                     mixerStatus = MIXER_TRACKS_ENABLED;
                 }
